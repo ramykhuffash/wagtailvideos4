@@ -11,7 +11,7 @@ class VideoChooserBlock(ChooserBlock):
     @cached_property
     def widget(self):
         from wagtailvideos.widgets import AdminVideoChooser
-        return AdminVideoChooser
+        return AdminVideoChooser()
 
     def render_basic(self, value, context=None):
         if value:

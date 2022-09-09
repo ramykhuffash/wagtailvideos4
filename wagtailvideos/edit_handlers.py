@@ -1,9 +1,9 @@
-from wagtail.admin.edit_handlers import BaseChooserPanel
+from wagtail.admin.panels import FieldPanel
 
 from .widgets import AdminVideoChooser
 
 
-class VideoChooserPanel(BaseChooserPanel):
+class VideoChooserPanel(FieldPanel):
     model = None
     field_name = None
     _target_model = None
