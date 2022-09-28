@@ -1,159 +1,174 @@
-from distutils.version import LooseVersion
-
-import wagtail
-from django.core.paginator import Paginator
-from django.shortcuts import get_object_or_404, render
+from django.conf import settings
+from django.utils.translation import gettext_lazy as _
 from django.urls import reverse
-from django.utils.translation import gettext as _
-from wagtail.admin.forms.search import SearchForm
-from wagtail.admin.modal_workflow import render_modal_workflow
-from wagtail.core.models import Collection
-from wagtail.search import index as search_index
+from django.views.generic.base import View
+from django.utils.functional import cached_property
 
+from wagtail.admin.auth import PermissionPolicyChecker
+from wagtail.admin.models import popular_tags_for_model
+from wagtail.admin.views.generic.chooser import (
+    BaseChooseView,
+    ChooseResultsViewMixin,
+    ChooseViewMixin,
+    ChosenResponseMixin,
+    ChosenViewMixin,
+    CreateViewMixin,
+    CreationFormMixin,
+)
+from wagtail.admin.viewsets.chooser import ChooserViewSet
 from wagtailvideos import get_video_model
 from wagtailvideos.forms import get_video_form
 from wagtailvideos.permissions import permission_policy
 
-if LooseVersion(wagtail.__version__) >= LooseVersion('2.7'):
-    from wagtail.admin.auth import PermissionPolicyChecker
-    from wagtail.admin.models import popular_tags_for_model
-else:
-    from wagtail.admin.utils import (
-        PermissionPolicyChecker, popular_tags_for_model)
-
 permission_checker = PermissionPolicyChecker(permission_policy)
 
 
-def get_chooser_js_data():
-    """construct context variables needed by the chooser JS"""
-    return {
-        'step': 'chooser',
-        'error_label': _("Server Error"),
-        'error_message': _("Report this error to your webmaster with the following information:"),
-        'tag_autocomplete_url': reverse('wagtailadmin_tag_autocomplete'),
-    }
-
-
-def get_video_json(video):
-    """
-    helper function: given a video, return the json to pass back to the
-    video chooser panel
-    """
-
-    return {
-        'id': video.id,
-        'edit_link': reverse('wagtailvideos:edit', args=(video.id,)),
-        'title': video.title,
-        'preview': {
-            'url': video.thumbnail.url if video.thumbnail else '',
+class VideoChosenResponseMixin(ChosenResponseMixin):
+    def get_chosen_response_data(self, video):
+        response_data = super().get_chosen_response_data(video)
+        response_data["preview"] = {
+            "url": video.thumbnail.url if video.thumbnail else "",
+            "width": 165,
+            "height": 165,
         }
-    }
+        return response_data
 
 
-def chooser(request):
-    Video = get_video_model()
-    VideoForm = get_video_form(Video)
-    uploadform = VideoForm()
+class VideoCreationFormMixin(CreationFormMixin):
+    creation_tab_id = "upload"
+    create_action_label = _("Upload")
+    create_action_clicked_label = _("Uploading…")
+    permission_policy = permission_policy
 
-    videos = Video.objects.order_by('-created_at')
+    def get_creation_form_class(self):
+        return get_video_form(self.model)
 
-    q = None
-    if (
-        'q' in request.GET or 'p' in request.GET or 'tag' in request.GET
-        or 'collection_id' in request.GET
-    ):
-        # this request is triggered from search, pagination or 'popular tags';
-        # we will just render the results.html fragment
-        collection_id = request.GET.get('collection_id')
-        if collection_id:
-            videos = videos.filter(collection=collection_id)
-
-        searchform = SearchForm(request.GET)
-        if searchform.is_valid():
-            q = searchform.cleaned_data['q']
-
-            videos = videos.search(q)
-            is_searching = True
-        else:
-            is_searching = False
-
-            tag_name = request.GET.get('tag')
-            if tag_name:
-                videos = videos.filter(tags__name=tag_name)
-
-        # Pagination
-        paginator = Paginator(videos, per_page=12)
-        page = paginator.get_page(request.GET.get('p'))
-
-        return render(request, "wagtailvideos/chooser/results.html", {
-            'videos': page,
-            'is_searching': is_searching,
-            'query_string': q,
-        })
-    else:
-        searchform = SearchForm()
-
-        collections = Collection.objects.all()
-        if len(collections) < 2:
-            collections = None
-
-        paginator = Paginator(videos, per_page=12)
-        page = paginator.get_page(request.GET.get('p'))
-
-    return render_modal_workflow(request, 'wagtailvideos/chooser/chooser.html', None, {
-        'videos': page,
-        'uploadform': uploadform,
-        'searchform': searchform,
-        'is_searching': False,
-        'query_string': q,
-        'popular_tags': popular_tags_for_model(Video),
-        'collections': collections,
-    }, json_data=get_chooser_js_data())
+    def get_creation_form_kwargs(self):
+        kwargs = super().get_creation_form_kwargs()
+        if self.request.method in ("POST", "PUT"):
+            kwargs["instance"] = self.model(uploaded_by_user=self.request.user)
+        return kwargs
 
 
-def video_chosen(request, video_id):
-    video = get_object_or_404(get_video_model(), id=video_id)
+class BaseVideoChooseView(BaseChooseView):
+    template_name = "wagtailvideos/chooser/chooser.html"
+    results_template_name = "wagtailvideos/chooser/results.html"
+    per_page = getattr(settings, "WAGTAILVIDEOS_CHOOSER_PAGE_SIZE", 12)
+    ordering = "-created_at"
 
-    return render_modal_workflow(
-        request, None, json_data={
-            'step': 'video_chosen',
-            'result': get_video_json(video)
-        })
-
-
-@permission_checker.require('add')
-def chooser_upload(request):
-    Video = get_video_model()
-    VideoForm = get_video_form(Video)
-
-    searchform = SearchForm()
-
-    if request.POST:
-        video = Video(uploaded_by_user=request.user)
-        form = VideoForm(request.POST, request.FILES, instance=video)
-
-        if form.is_valid():
-            video.uploaded_by_user = request.user
-            video.save()
-
-            # Reindex the video to make sure all tags are indexed
-            search_index.insert_or_update_object(video)
-
-            return render_modal_workflow(
-                request, None, json_data={
-                    'step': 'video_chosen',
-                    'result': get_video_json(video)
-                }
+    def get_object_list(self):
+        return (
+            permission_policy.instances_user_has_any_permission_for(
+                self.request.user, ["choose"]
             )
-    else:
-        form = VideoForm()
+            .select_related("collection")
+        )
 
-    videos = Video.objects.order_by('title')
-    paginator = Paginator(videos, per_page=12)
-    page = paginator.get_page(request.GET.get('p'))
+    def filter_object_list(self, objects):
+        tag_name = self.request.GET.get("tag")
+        if tag_name:
+            objects = objects.filter(tags__name=tag_name)
+        return super().filter_object_list(objects)
 
-    return render_modal_workflow(
-        request, 'wagtailvideos/chooser/chooser.html', None,
-        template_vars={'videos': page, 'uploadform': form, 'searchform': searchform},
-        json_data=get_chooser_js_data()
-    )
+    def get_filter_form(self):
+        FilterForm = self.get_filter_form_class()
+        return FilterForm(self.request.GET, collections=self.collections)
+
+    @cached_property
+    def collections(self):
+        collections = self.permission_policy.collections_user_has_permission_for(
+            self.request.user, "choose"
+        )
+        if len(collections) < 2:
+            return None
+
+        return collections
+
+    def get(self, request):
+        self.model = get_video_model()
+        return super().get(request)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(
+            {
+                "collections": self.collections,
+            }
+        )
+        return context
+
+
+class VideoChooseViewMixin(ChooseViewMixin):
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["popular_tags"] = popular_tags_for_model(self.model)
+        return context
+
+    def get_response_json_data(self):
+        json_data = super().get_response_json_data()
+        json_data["tag_autocomplete_url"] = reverse("wagtailadmin_tag_autocomplete")
+        return json_data
+
+
+class VideoChooseView(
+    VideoChooseViewMixin, VideoCreationFormMixin, BaseVideoChooseView
+):
+    pass
+
+
+class VideoChooseResultsView(
+    ChooseResultsViewMixin, VideoCreationFormMixin, BaseVideoChooseView
+):
+    pass
+
+
+class VideoChosenView(ChosenViewMixin, VideoChosenResponseMixin, View):
+    def get(self, request, *args, pk, **kwargs):
+        self.model = get_video_model()
+        return super().get(request, *args, pk, **kwargs)
+
+
+class VideoUploadViewMixin(CreateViewMixin):
+    def get(self, request):
+        self.model = get_video_model()
+        return super().get(request)
+
+    def post(self, request):
+        self.model = get_video_model()
+        self.form = self.get_creation_form()
+
+        if self.form.is_valid():
+            image = self.save_form(self.form)
+
+            # not specifying a format; return the image details now
+            return self.get_chosen_response(image)
+
+        else:  # form is invalid
+            return self.get_reshow_creation_form_response()
+
+
+class VideoUploadView(
+    VideoUploadViewMixin, VideoCreationFormMixin, VideoChosenResponseMixin, View
+):
+    pass
+
+
+class VideoChooserViewSet(ChooserViewSet):
+    choose_view_class = VideoChooseView
+    choose_results_view_class = VideoChooseResultsView
+    chosen_view_class = VideoChosenView
+    create_view_class = VideoUploadView
+    permission_policy = permission_policy
+    register_widget = False
+
+    icon = "media"
+    choose_one_text = _("Choose a video")
+    create_action_label = _("Upload")
+    create_action_clicked_label = _("Uploading…")
+
+
+viewset = VideoChooserViewSet(
+    "wagtailvideos_chooser",
+    model=get_video_model(),
+    url_prefix="videos/chooser",
+)

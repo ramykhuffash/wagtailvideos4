@@ -13,6 +13,7 @@ from wagtail.core import hooks
 from wagtailvideos import get_video_model, is_modeladmin_installed, urls
 from wagtailvideos.edit_handlers import VideoChooserPanel
 from wagtailvideos.forms import GroupVideoPermissionFormSet
+from wagtailvideos.views.chooser import viewset as chooser_viewset
 
 from .permissions import permission_policy
 
@@ -55,7 +56,7 @@ def editor_js():
             window.chooserUrls.videoChooser = '{0}';
         </script>
         """,
-        reverse('wagtailvideos:chooser')
+        reverse('wagtailvideos_chooser:choose')
     )
 
 
@@ -103,9 +104,9 @@ def hide_track_listing_main(request, menu_items):
 
 class VideoSummaryItem(SummaryItem):
     order = 300
-    template = "wagtailvideos/homepage/videos_summary.html"
+    template_name = "wagtailvideos/homepage/videos_summary.html"
 
-    def get_context(self):
+    def get_context_data(self, parent_context):
         return {
             "total_videos": Video.objects.count(),
         }
@@ -142,3 +143,8 @@ def register_media_search_area():
 @hooks.register('insert_global_admin_css')
 def summary_css():
     return format_html('<link rel="stylesheet" href="{}">', static('wagtailvideos/css/summary-override.css'))
+
+
+@hooks.register("register_admin_viewset")
+def register_image_chooser_viewset():
+    return chooser_viewset

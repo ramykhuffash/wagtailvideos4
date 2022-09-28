@@ -18,8 +18,8 @@ setup(
     url='https://github.com/neon-jungle/wagtailvideos',
 
     install_requires=[
-        'wagtail>=2.5',
-        'Django>=2.0',
+        'wagtail>=4.0',
+        'Django>=3.2',
         'django-enumchoicefield>=1.1.0',
         'bcp47==0.0.4',
     ],
