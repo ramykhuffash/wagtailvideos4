@@ -1,6 +1,5 @@
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
-from django.utils.functional import SimpleLazyObject
 
 default_app_config = 'wagtailvideos.apps.WagtailVideosApp'
 
@@ -14,8 +13,7 @@ def get_video_model_string():
     return getattr(settings, 'WAGTAILVIDEOS_VIDEO_MODEL', 'wagtailvideos.Video')
 
 
-def _get_video_model():
-    """Internal function that actually loads the model"""
+def get_video_model():
     from django.apps import apps
     model_string = get_video_model_string()
     try:
@@ -26,7 +24,3 @@ def _get_video_model():
         raise ImproperlyConfigured(
             "WAGTAILVIDEOS_VIDEO_MODEL refers to model '%s' that has not been installed" % model_string
         )
-
-
-# This is the key - use Django's SimpleLazyObject to defer loading
-get_video_model = SimpleLazyObject(_get_video_model)
