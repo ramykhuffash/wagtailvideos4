@@ -5,7 +5,8 @@ from django.core.files.temp import NamedTemporaryFile
 from django.db import transaction
 from django.db.models.signals import post_delete, post_save
 
-from wagtailvideos import ffmpeg, get_video_model
+from . import ffmpeg
+from .models import get_video_model
 
 
 @contextmanager
