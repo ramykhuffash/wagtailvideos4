@@ -5,8 +5,6 @@ from django.core.files.temp import NamedTemporaryFile
 from django.db import transaction
 from django.db.models.signals import post_delete, post_save
 
-from . import ffmpeg, get_video_model
-
 
 @contextmanager
 def get_local_file(file):
@@ -41,6 +39,7 @@ def post_delete_file_cleanup(instance, **kwargs):
 
 # Fields that need the actual video file to create using ffmpeg
 def video_post_save(instance, **kwargs):
+    from . import ffmpeg
     if not ffmpeg.installed():
         return
 
@@ -65,6 +64,7 @@ def video_post_save(instance, **kwargs):
 
 
 def register_signal_handlers():
+    from . import get_video_model
     Video = get_video_model()
     VideoTranscode = Video.get_transcode_model()
     TrackListing = Video.get_track_listing_model()
