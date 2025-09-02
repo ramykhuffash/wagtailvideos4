@@ -10,7 +10,7 @@ from wagtail.admin.site_summary import SummaryItem
 from wagtail.contrib.modeladmin.options import ModelAdmin, modeladmin_register
 from wagtail.core import hooks
 
-from wagtailvideos import get_video_model, is_modeladmin_installed, urls
+from wagtailvideos import get_video_model, is_modeladmin_installed
 from wagtailvideos.edit_handlers import VideoChooserPanel
 from wagtailvideos.forms import GroupVideoPermissionFormSet
 from wagtailvideos.views.chooser import viewset as chooser_viewset
@@ -43,6 +43,7 @@ if is_modeladmin_installed():
 
 @hooks.register('register_admin_urls')
 def register_admin_urls():
+    from wagtailvideos import urls
     return [
         path('videos/', include(urls)),
     ]
