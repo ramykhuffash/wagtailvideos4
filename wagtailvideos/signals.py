@@ -1,5 +1,6 @@
 import os
 from contextlib import contextmanager
+from django.conf import settings
 
 from django.core.files.temp import NamedTemporaryFile
 from django.db import transaction
@@ -64,8 +65,9 @@ def video_post_save(instance, **kwargs):
 
 
 def register_signal_handlers():
-    from . import get_video_model
-    Video = get_video_model()
+    video_model_string = getattr(settings, 'WAGTAILVIDEOS_VIDEO_MODEL', 'wagtailvideos.Video')
+    from django.apps import apps
+    Video = apps.get_model(video_model_string)
     VideoTranscode = Video.get_transcode_model()
     TrackListing = Video.get_track_listing_model()
     VideoTrack = TrackListing.get_track_model()
